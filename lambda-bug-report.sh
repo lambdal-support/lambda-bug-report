@@ -55,18 +55,36 @@ mkdir -p "$GRUB_DIR"
 #Global variables
 APT_UPDATE_HAS_RUN=False
 
+# Check for the presence of utilities that may not be installed by default
+utilities=(
+    "smartctl"
+    "ibstat"
+    "ipmitool"
+    "sensors"
+    "iostat"
+    "lshw"
+)
+
+pending_install_utilities=()
+
+# Iterate through utilities and create an array of utilities pending install
+for u in ${utilities[@]}; do
+    if ! command -v $u >/dev/null 2>&1; then
+        echo "$u could not be found, pending install."
+        pending_install_utilities+=($u)
+    fi
+done
+
+# Install the utilities using the array of pending utilities
+if [ "$APT_UPDATE_HAS_RUN" != "True" ]; then
+    sudo apt update >/dev/null 2>&1
+    APT_UPDATE_HAS_RUN=True
+fi
+
+sudo apt install -y ${pending_install_utilities[@]} >/dev/null 2>&1
+
 # Collect SMART data for all drives
 collect_drive_checks() {
-    # Ensure smartmontools is installed for smartctl
-    if ! command -v smartctl >/dev/null 2>&1; then
-        echo "smartctl could not be found, attempting to install."
-        if [ "$APT_UPDATE_HAS_RUN" != "True" ]; then
-            sudo apt-get update >/dev/null 2>&1
-            APT_UPDATE_HAS_RUN=True
-        fi
-        sudo apt-get install -y smartmontools >/dev/null 2>&1
-    fi
-
     lsblk -o NAME,MAJ:MIN,RM,SIZE,RO,FSTYPE,LABEL,UUID,TYPE,MOUNTPOINT >"$DRIVES_AND_STORAGE_DIR/lsblk.txt"
 
     # Collect SMART data for all drives
@@ -107,29 +125,13 @@ done
 sudo dmesg -Tl err >"${SYSTEM_LOGS_DIR}/dmesg-errors.txt"
 sudo journalctl >"${SYSTEM_LOGS_DIR}/journalctl.txt"
 
-# Check for ibstat and install if not present
-if ! command -v ibstat >/dev/null 2>&1; then
-    echo "ibstat could not be found, attempting to install."
-    if [ "$APT_UPDATE_HAS_RUN" != "True" ]; then
-        sudo apt-get update >/dev/null 2>&1
-        APT_UPDATE_HAS_RUN=True
-    fi
-    sudo apt-get install -y infiniband-diags >/dev/null 2>&1
-fi
+# Run ibstat
 ibstat >"${FINAL_DIR}/ibstat.txt"
 if [ ! -s "${FINAL_DIR}/ibstat.txt" ]; then
     echo "No InfiniBand data available. This machine may not have InfiniBand." >"${FINAL_DIR}/ibstat.txt"
 fi
 
-# Check for ipmitool and install if not present
-if ! command -v ipmitool >/dev/null 2>&1; then
-    echo "ipmitool could not be found, attempting to install."
-    if [ "$APT_UPDATE_HAS_RUN" != "True" ]; then
-        sudo apt-get update >/dev/null 2>&1
-        APT_UPDATE_HAS_RUN=True
-    fi
-    sudo apt-get install -y ipmitool >/dev/null 2>&1
-fi
+# Run ipmitool
 sudo ipmitool sel elist >"${BMC_INFO_DIR}/ipmi-elist.txt" 2>/dev/null
 if [ ! -s "${BMC_INFO_DIR}/ipmi-elist.txt" ]; then
     echo "No IPMI ELIST data available. This machine may not have IPMI." >"${BMC_INFO_DIR}/ipmi-elist.txt"
@@ -139,37 +141,13 @@ if [ ! -s "${BMC_INFO_DIR}/ipmi-sdr.txt" ]; then
     echo "No IPMI SDR data available. This machine may not have IPMI." >"${BMC_INFO_DIR}/ipmi-sdr.txt"
 fi
 
-# Check for sensors and install if not present
-if ! command -v sensors >/dev/null 2>&1; then
-    echo "sensors could not be found, attempting to install."
-    if [ "$APT_UPDATE_HAS_RUN" != "True" ]; then
-        sudo apt-get update >/dev/null 2>&1
-        APT_UPDATE_HAS_RUN=True
-    fi
-    sudo apt-get install -y lm-sensors >/dev/null 2>&1
-fi
+# Run sensors
 sensors >"${FINAL_DIR}/sensors.txt" 2>/dev/null
 
-# Check for iostat and install if not present
-if ! command -v iostat >/dev/null 2>&1; then
-    echo "iostat could not be found, attempting to install."
-    if [ "$APT_UPDATE_HAS_RUN" != "True" ]; then
-        sudo apt-get update >/dev/null 2>&1
-        APT_UPDATE_HAS_RUN=True
-    fi
-    sudo apt-get install -y sysstat >/dev/null 2>&1
-fi
+# Run iostat
 sudo iostat -xt >"${DRIVES_AND_STORAGE_DIR}/iostat.txt"
 
-# Check for lshw and install if not present
-if ! command -v lshw >/dev/null 2>&1; then
-    echo "lshw could not be found, attempting to install."
-    if [ "$APT_UPDATE_HAS_RUN" != "True" ]; then
-        sudo apt-get update >/dev/null 2>&1
-        APT_UPDATE_HAS_RUN=True
-    fi
-    sudo apt-get install -y lshw >/dev/null 2>&1
-fi
+# Run lshw
 sudo lshw >"${FINAL_DIR}/hw-list.txt"
 
 # Collect SW Raid info
